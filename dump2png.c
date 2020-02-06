@@ -49,6 +49,7 @@
 #include <fcntl.h>
 #include <math.h>
 #include <png.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -56,7 +57,7 @@ static void
 usage(int full)
 {
 	printf("USAGE: dump2png [-HM] [-w width] [-h height_max]\n"
-	    "                [-p palette] [-o outfile.png]\n"
+	    "                [-p palette] [-o output.png]\n"
 	    "                [-k skip_factor] [-s seek_bytes]\n"
 	    "                [-z zoom_factor] file\n\n"
 	    "                [--help]\t# for full help\n\n"
@@ -70,7 +71,7 @@ usage(int full)
 	    "\t-k skip_factor\tskips horiz lines; eg, 3 means show 1 out of 3\n"
 	    "\t-s seek_bytes\tthe byte offset of the infile to begin reading\n"
 	    "\t-z zoom_factor\taverages multiple bytes; eg, 16 avgs 16 as 1\n"
-	    "\t-z palette\tpalette type for colorization:\n\n"
+	    "\t-p palette\tpalette type for colorization:\n\n"
 	    "\tgray\t\tgrayscale, per byte\n"
 	    "\tgray16b\t\tgrayscale, per short (big-endian)\n"
 	    "\tgray16l\t\tgrayscale, per short (little-endian)\n"
@@ -116,7 +117,7 @@ static int doimage(int infile, FILE *outfile, int width, int height,
 int
 main(int argc, char *argv[])
 {
-	char *infilename, *outfilename = "dump2png.png";
+	char *infilename, *outfilename = "output.png";
 	extern char *optarg;
 	extern int optind, optopt;
 	struct stat filestat;
@@ -126,11 +127,12 @@ main(int argc, char *argv[])
 	FILE *outfile;
 
 	/* defaults */
-	width = 1024 * 1;
+	width = 256 * 1;
+	// width = 1024 * 1;
 	height = 1024 * 10;
 	zoom = skip = 1;
 	seek = 0;
-	mask = 1;
+	mask = 0;
 	pal = X86;
 
 	if (argc < 2 || strcmp(argv[1], "--help") == 0)
@@ -182,8 +184,7 @@ main(int argc, char *argv[])
 	}
 
 	chrs = pal2chrs(pal);
-	int fullheight = ceil((float)(filestat.st_size /
-	    (zoom * skip * chrs)) / width);
+	int fullheight = ceil((float)(filestat.st_size / (zoom * skip * chrs)) / width);
 
 	if (fullheight > height) {
 		printf("Truncating height: showing %llu of %llu bytes. ",
@@ -215,8 +216,7 @@ main(int argc, char *argv[])
 	}
 
 	printf("Writing %s...\n", outfilename);
-	int result = doimage(infile, outfile, width, height, pal, skip, zoom,
-	    mask);
+	int result = doimage(infile, outfile, width, height, pal, skip, zoom, mask);
 	close(infile);
 	fclose(outfile);
 
@@ -277,7 +277,7 @@ pal2chrs(palette_t pal)
 	}
 }
 
-inline void
+void
 map_hues(png_byte *ptr, unsigned char val)
 {
 	int v = val * 3;
@@ -290,7 +290,7 @@ map_hues(png_byte *ptr, unsigned char val)
 	}
 }
 
-inline void
+void
 map_fhues(png_byte *ptr, unsigned char val)
 {
 	int v = val * 6;
@@ -309,7 +309,7 @@ map_fhues(png_byte *ptr, unsigned char val)
 	}
 }
 
-inline void
+void
 map_hues6(png_byte *ptr, unsigned char val)
 {
 	int v = val * 6;
@@ -328,7 +328,7 @@ map_hues6(png_byte *ptr, unsigned char val)
 	}
 }
 
-inline void
+void
 map_color16(png_byte *ptr, unsigned short val)
 {
 	ptr[0] = (val & 0xfc00) >> 8;
@@ -336,7 +336,7 @@ map_color16(png_byte *ptr, unsigned short val)
 	ptr[2] = (val & 0x001f) << 3;
 }
 
-inline void
+void
 map_color32(png_byte *ptr, unsigned long val)
 {
 	ptr[0] = (val & 0xff000000) >> 24;
@@ -344,7 +344,7 @@ map_color32(png_byte *ptr, unsigned long val)
 	ptr[2] = (val & 0x000001fe) >> 1;
 }
 
-inline unsigned char
+unsigned char
 c2v_binary(unsigned char c)
 {
 	switch (c) {
@@ -355,7 +355,7 @@ c2v_binary(unsigned char c)
 	return (0);
 }
 
-inline unsigned char
+unsigned char
 c2v_english(char c)
 {
 	switch (c) {
@@ -366,7 +366,7 @@ c2v_english(char c)
 	return (0);
 }
 
-inline unsigned char
+unsigned char
 c2v_x86(unsigned char c)
 {
 	switch (c) {
@@ -407,10 +407,8 @@ doimage(int infile, FILE *outfile, int width, int height, palette_t pal,
 	unsigned long sum[3];
 
 	/* setup png */
-	pngbyte = (png_bytep)malloc(width * skip * zoom * sizeof (png_byte) *
-	    3);
-	pngstruct = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL,
-	    NULL);
+	pngbyte = (png_bytep)malloc(width * skip * zoom * sizeof (png_byte) * 3);
+	pngstruct = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
 	pnginfo = png_create_info_struct(pngstruct);
 	chrs = pal2chrs(pal);
 	inbuf = (char *)malloc(width * skip * zoom * chrs);
@@ -505,21 +503,15 @@ doimage(int infile, FILE *outfile, int width, int height, palette_t pal,
 					 */
 					case COLOR:
 						rgb[0] = inbuf[xx] & 0xe0;
-						rgb[1] = (inbuf[xx] & 0x1c) <<
-						    3;
-						rgb[2] = (inbuf[xx] & 0x03) <<
-						    6;
+						rgb[1] = (inbuf[xx] & 0x1c) << 3;
+						rgb[2] = (inbuf[xx] & 0x03) << 6;
 						break;
 					case COLOR16:
-						map_color16(&rgb[0],
-						    inbuf[xx++] +
-						    (inbuf[xx] << 8));
+						map_color16(&rgb[0], inbuf[xx++] + (inbuf[xx] << 8));
 						break;
 					case COLOR32:
-						map_color32(&rgb[0],
-						    inbuf[xx++] +
-						    (inbuf[xx++] << 8) +
-						    (inbuf[xx++] << 16) +
+						map_color32(&rgb[0], inbuf[xx++] +
+						    (inbuf[xx++] << 8) + (inbuf[xx++] << 16) +
 						    (inbuf[xx] << 24));
 						break;
 					/*
